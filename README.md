@@ -29,7 +29,7 @@ Live and installation work often depends on a second display, but the actual dis
   - `Lightweight (auto)` reduces preview frequency at high resolutions.
   - `60 Hz` targets smoother preview updates when motion fidelity matters.
 - Preview capture runs on a dedicated serial queue and skips overlapping frames, so high refresh settings do not block the app UI.
-- Preview checks Screen & System Audio Recording permission before capture, so it does not repeatedly trigger the system permission dialog.
+- Preview does not block on legacy preflight permission checks; it attempts ScreenCaptureKit capture and uses the actual capture result.
 - Online display list inside the app.
 - Shortcut to macOS Displays settings.
 - CLI helpers for automation and quick testing.
@@ -121,7 +121,7 @@ If the preview is blank:
 1. Open macOS System Settings.
 2. Go to Privacy & Security.
 3. Grant Screen Recording permission to `Virtual Second Monitor.app`.
-4. Click `Refresh Recording Permission` in the app, or restart the app.
+4. Click `Refresh Recording Permission` in the app, or restart the app. The button refreshes capture state even if macOS' legacy preflight check reports a stale value.
 
 During development, repeated ad-hoc builds can make macOS privacy permissions appear unstable because the app's code signature changes. To use a stable signing identity, pass it to the build script:
 

@@ -919,12 +919,6 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
     return;
   }
 
-  if (!VSMScreenCaptureAccessGranted()) {
-    self.previewView.image = nil;
-    self.previewView.message = @"Preview paused. Enable Screen & System Audio Recording, then refresh permission.";
-    return;
-  }
-
   if (self.previewCaptureInFlight) {
     return;
   }
@@ -1039,7 +1033,7 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
 - (void)refreshCaptureAccess:(id)sender {
   (void)sender;
   if (VSMScreenCaptureAccessGranted()) {
-    self.statusLabel.stringValue = @"Preview permission active";
+    self.statusLabel.stringValue = @"Permission preflight active";
     if (self.virtualDisplay) {
       self.previewView.message = @"Waiting for display frames...";
       [self startPreviewTimer];
@@ -1047,9 +1041,11 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
     return;
   }
 
-  self.previewView.image = nil;
-  self.previewView.message = @"Screen & System Audio Recording is not active for this app.";
-  self.statusLabel.stringValue = @"Preview permission inactive";
+  self.statusLabel.stringValue = @"Preflight inactive; trying capture";
+  if (self.virtualDisplay) {
+    self.previewView.message = @"Trying preview capture...";
+    [self startPreviewTimer];
+  }
 }
 
 - (void)gridChanged:(id)sender {
