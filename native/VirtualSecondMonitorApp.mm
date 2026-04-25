@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <dispatch/dispatch.h>
 #import <dlfcn.h>
 #import <stdlib.h>
@@ -217,6 +218,10 @@ static NSString *VSMDisplayListText(void) {
 }
 
 typedef CGImageRef (*VSMCGDisplayCreateImageFunction)(CGDirectDisplayID displayID);
+typedef CGImageRef (*VSMCGWindowListCreateImageFunction)(CGRect screenBounds,
+                                                         CGWindowListOption listOption,
+                                                         CGWindowID windowID,
+                                                         CGWindowImageOption imageOption);
 typedef bool (*VSMCGPreflightScreenCaptureAccessFunction)(void);
 
 static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
@@ -233,6 +238,40 @@ static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
     return NULL;
   }
   return createImage(displayID);
+}
+
+static CGImageRef VSMCopyWindowCompositeImage(CGDirectDisplayID displayID) {
+  static VSMCGWindowListCreateImageFunction createImage = NULL;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    void *handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY);
+    if (handle) {
+      createImage = (VSMCGWindowListCreateImageFunction)dlsym(handle, "CGWindowListCreateImage");
+    }
+  });
+
+  if (!createImage) {
+    return NULL;
+  }
+
+  CGRect displayBounds = CGDisplayBounds(displayID);
+  if (CGRectIsEmpty(displayBounds) || CGRectIsNull(displayBounds)) {
+    return NULL;
+  }
+
+  return createImage(displayBounds,
+                     kCGWindowListOptionOnScreenOnly,
+                     kCGNullWindowID,
+                     kCGWindowImageDefault | kCGWindowImageBestResolution);
+}
+
+static CGImageRef VSMCopyPreviewImage(CGDirectDisplayID displayID) {
+  CGImageRef compositeImage = VSMCopyWindowCompositeImage(displayID);
+  if (compositeImage) {
+    return compositeImage;
+  }
+
+  return VSMCopyDisplayImage(displayID);
 }
 
 static BOOL VSMScreenCaptureAccessGranted(void) {
@@ -894,31 +933,101 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   CGDirectDisplayID displayID = self.virtualDisplayID;
   uint64_t generation = self.previewGeneration;
 
+  if (@available(macOS 14.0, *)) {
+    [self captureScreenCaptureKitPreviewForDisplayID:displayID generation:generation];
+    return;
+  }
+
+  [self captureCoreGraphicsPreviewForDisplayID:displayID generation:generation];
+}
+
+- (void)captureScreenCaptureKitPreviewForDisplayID:(CGDirectDisplayID)displayID generation:(uint64_t)generation API_AVAILABLE(macos(14.0)) {
+  [SCShareableContent getShareableContentExcludingDesktopWindows:NO
+                                             onScreenWindowsOnly:YES
+                                               completionHandler:^(SCShareableContent *_Nullable shareableContent, NSError *_Nullable error) {
+    if (error || !shareableContent) {
+      [self captureCoreGraphicsPreviewForDisplayID:displayID generation:generation];
+      return;
+    }
+
+    SCDisplay *targetDisplay = nil;
+    for (SCDisplay *display in shareableContent.displays) {
+      if (display.displayID == displayID) {
+        targetDisplay = display;
+        break;
+      }
+    }
+
+    if (!targetDisplay) {
+      [self captureCoreGraphicsPreviewForDisplayID:displayID generation:generation];
+      return;
+    }
+
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:targetDisplay excludingWindows:@[]];
+    if ([filter respondsToSelector:@selector(setIncludeMenuBar:)]) {
+      filter.includeMenuBar = YES;
+    }
+
+    SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
+    configuration.width = (size_t)MAX(1, targetDisplay.width);
+    configuration.height = (size_t)MAX(1, targetDisplay.height);
+    configuration.showsCursor = YES;
+    if ([configuration respondsToSelector:@selector(setCapturesAudio:)]) {
+      configuration.capturesAudio = NO;
+    }
+
+    [SCScreenshotManager captureImageWithFilter:filter
+                                  configuration:configuration
+                              completionHandler:^(CGImageRef _Nullable imageRef, NSError *_Nullable captureError) {
+      if (captureError || !imageRef) {
+        [self captureCoreGraphicsPreviewForDisplayID:displayID generation:generation];
+        return;
+      }
+
+      [self finishPreviewCaptureWithImage:CGImageRetain(imageRef)
+                                displayID:displayID
+                               generation:generation
+                            failureMessage:nil];
+    }];
+  }];
+}
+
+- (void)captureCoreGraphicsPreviewForDisplayID:(CGDirectDisplayID)displayID generation:(uint64_t)generation {
   dispatch_async(self.previewCaptureQueue, ^{
-    CGImageRef imageRef = VSMCopyDisplayImage(displayID);
+    CGImageRef imageRef = VSMCopyPreviewImage(displayID);
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-      if (generation != self.previewGeneration || displayID != self.virtualDisplayID || !self.virtualDisplay) {
-        if (imageRef) {
-          CGImageRelease(imageRef);
-        }
-        self.previewCaptureInFlight = NO;
-        return;
+    [self finishPreviewCaptureWithImage:imageRef
+                              displayID:displayID
+                             generation:generation
+                          failureMessage:@"Preview unavailable. Grant Screen Recording permission and restart the app."];
+  });
+}
+
+- (void)finishPreviewCaptureWithImage:(CGImageRef)imageRef
+                            displayID:(CGDirectDisplayID)displayID
+                           generation:(uint64_t)generation
+                        failureMessage:(NSString *)failureMessage {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (generation != self.previewGeneration || displayID != self.virtualDisplayID || !self.virtualDisplay) {
+      if (imageRef) {
+        CGImageRelease(imageRef);
       }
-
-      if (!imageRef) {
-        self.previewView.image = nil;
-        self.previewView.message = @"Preview unavailable. Grant Screen Recording permission and restart the app.";
-        self.previewCaptureInFlight = NO;
-        return;
-      }
-
-      NSImage *image = [[NSImage alloc] initWithCGImage:imageRef
-                                                  size:NSMakeSize(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef))];
-      CGImageRelease(imageRef);
-      self.previewView.image = image;
       self.previewCaptureInFlight = NO;
-    });
+      return;
+    }
+
+    if (!imageRef) {
+      self.previewView.image = nil;
+      self.previewView.message = failureMessage ?: @"Preview unavailable.";
+      self.previewCaptureInFlight = NO;
+      return;
+    }
+
+    NSImage *image = [[NSImage alloc] initWithCGImage:imageRef
+                                                size:NSMakeSize(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef))];
+    CGImageRelease(imageRef);
+    self.previewView.image = image;
+    self.previewCaptureInFlight = NO;
   });
 }
 

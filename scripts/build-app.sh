@@ -21,6 +21,7 @@ clang++ \
   -framework AppKit \
   -framework Foundation \
   -framework CoreGraphics \
+  -weak_framework ScreenCaptureKit \
   -framework QuartzCore \
   "$root_dir/native/VirtualSecondMonitorApp.mm" \
   -o "$macos/$app_name"

@@ -114,7 +114,7 @@ If you manually enter `3840 x 2160` or higher in the app, HiDPI is enabled autom
 
 ## Preview Notes
 
-The preview uses a CoreGraphics display snapshot path through a runtime-loaded `CGDisplayCreateImage` symbol. It is isolated in the app code so it can be replaced with ScreenCaptureKit later.
+The preview uses ScreenCaptureKit when available, with a CoreGraphics window-composite fallback for older systems.
 
 If the preview is blank:
 
