@@ -1,0 +1,18 @@
+{
+  "name": "virtual-second-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:app": "scripts/build-app.sh",
+    "open:app": "open \"build/Virtual Second Monitor.app\"",
+    "start:app": "npm run build:app && npm run open:app",
+    "build:native": "scripts/build-native.sh",
+    "start:native": "scripts/run-1080p.sh",
+    "start:4k": "scripts/run-4k.sh",
+    "start:8k": "scripts/run-8k.sh",
+    "start:hidpi": "scripts/run-hidpi-4k.sh",
+    "list": "build/virtual-second-monitor --list",
+    "start:web": "node server.mjs"
+  }
+}

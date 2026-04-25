@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Virtual Display</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="display-body">
+    <div class="display-toolbar" id="displayToolbar">
+      <span id="displaySizeLabel">Waiting for controller</span>
+      <div>
+        <button id="displayFit" type="button">Fit</button>
+        <button id="displayFullscreen" type="button">Fullscreen</button>
+      </div>
+    </div>
+    <main class="display-stage" id="displayStage">
+      <div class="screen-scale" id="displayScale">
+        <div class="virtual-screen" id="displayScreen"></div>
+      </div>
+    </main>
+    <script type="module" src="/display.js"></script>
+  </body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Virtual Second Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Virtual Second Monitor</h1>
+          <p>Debug a second-display layout in a controllable browser window.</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="status-pill" id="displayStatus">Display offline</span>
+          <button class="primary-button" id="openDisplay" type="button">Open display</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="control-panel">
+          <section class="control-group">
+            <div class="group-title">Resolution</div>
+            <div class="preset-grid" id="presetGrid"></div>
+            <div class="field-row">
+              <label>
+                Width
+                <input id="widthInput" type="number" min="160" max="7680" step="1" />
+              </label>
+              <label>
+                Height
+                <input id="heightInput" type="number" min="120" max="4320" step="1" />
+              </label>
+            </div>
+          </section>
+
+          <section class="control-group">
+            <div class="group-title">Content</div>
+            <div class="segmented" id="modeTabs">
+              <button data-mode="pattern" type="button">Pattern</button>
+              <button data-mode="url" type="button">URL</button>
+              <button data-mode="media" type="button">Media</button>
+              <button data-mode="solid" type="button">Solid</button>
+            </div>
+
+            <label class="stacked" id="patternControl">
+              Test pattern
+              <select id="patternSelect">
+                <option value="bars">Color bars</option>
+                <option value="checker">Checker</option>
+                <option value="gradient">Gradient</option>
+                <option value="coordinates">Coordinates</option>
+              </select>
+            </label>
+
+            <label class="stacked hidden" id="urlControl">
+              Target URL
+              <input id="urlInput" type="url" placeholder="http://localhost:5173/" />
+            </label>
+
+            <div class="drop-zone hidden" id="mediaControl">
+              <input id="mediaInput" type="file" accept="image/*,video/*" />
+              <span>Drop image/video or choose a file</span>
+            </div>
+
+            <label class="stacked hidden" id="solidControl">
+              Fill color
+              <input id="colorInput" type="color" />
+            </label>
+          </section>
+
+          <section class="control-group">
+            <div class="group-title">Overlays</div>
+            <label class="toggle-row">
+              <input id="hudToggle" type="checkbox" />
+              <span>Debug HUD</span>
+            </label>
+            <label class="toggle-row">
+              <input id="gridToggle" type="checkbox" />
+              <span>Grid</span>
+            </label>
+            <label class="toggle-row">
+              <input id="safeToggle" type="checkbox" />
+              <span>Safe area</span>
+            </label>
+            <label class="toggle-row">
+              <input id="cursorToggle" type="checkbox" />
+              <span>Pointer telemetry</span>
+            </label>
+          </section>
+
+          <section class="control-group">
+            <div class="group-title">Preview</div>
+            <label class="stacked">
+              Preview zoom
+              <input id="zoomInput" type="range" min="10" max="100" step="1" />
+            </label>
+            <div class="value-readout"><span id="zoomReadout">50</span>%</div>
+            <div class="button-row">
+              <button id="fitPreview" type="button">Fit</button>
+              <button id="copyUrl" type="button">Copy URL</button>
+            </div>
+          </section>
+        </aside>
+
+        <section class="preview-area">
+          <div class="preview-header">
+            <div>
+              <strong id="screenLabel">1920 x 1080</strong>
+              <span id="modeLabel">Pattern</span>
+            </div>
+            <span id="pointerLabel">x: -, y: -</span>
+          </div>
+          <div class="preview-viewport" id="previewViewport">
+            <div class="screen-scale" id="previewScale">
+              <div class="virtual-screen" id="previewScreen"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
