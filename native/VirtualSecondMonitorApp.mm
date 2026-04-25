@@ -366,6 +366,9 @@ static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
 @property(strong, nonatomic) NSTextField *statusLabel;
 @property(strong, nonatomic) NSTimer *previewTimer;
 @property(strong, nonatomic) NSTimer *displayListTimer;
+@property(strong, nonatomic) dispatch_queue_t previewCaptureQueue;
+@property(nonatomic) BOOL previewCaptureInFlight;
+@property(nonatomic) uint64_t previewGeneration;
 @property(strong, nonatomic) CGVirtualDisplay *virtualDisplay;
 @property(nonatomic) CGDirectDisplayID virtualDisplayID;
 @property(copy, nonatomic) NSString *currentDisplayName;
@@ -379,6 +382,7 @@ static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
   (void)notification;
+  self.previewCaptureQueue = dispatch_queue_create("ws.daito.virtual-second-monitor.preview-capture", DISPATCH_QUEUE_SERIAL);
   [self buildMenu];
   [self buildWindow];
   [self refreshDisplayList:nil];
@@ -759,6 +763,8 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   }
 
   CGDirectDisplayID removedID = self.virtualDisplayID;
+  self.previewGeneration++;
+  self.previewCaptureInFlight = NO;
   self.virtualDisplay = nil;
   self.virtualDisplayID = 0;
   self.currentDisplayName = nil;
@@ -779,6 +785,8 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
 
 - (void)startPreviewTimer {
   [self.previewTimer invalidate];
+  self.previewGeneration++;
+  self.previewCaptureInFlight = NO;
   NSTimeInterval interval = [self previewInterval];
   self.previewTimer = [NSTimer timerWithTimeInterval:interval
                                               target:self
@@ -845,17 +853,40 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
     return;
   }
 
-  CGImageRef imageRef = VSMCopyDisplayImage(self.virtualDisplayID);
-  if (!imageRef) {
-    self.previewView.image = nil;
-    self.previewView.message = @"Preview unavailable. Grant Screen Recording permission and restart the app.";
+  if (self.previewCaptureInFlight) {
     return;
   }
 
-  NSImage *image = [[NSImage alloc] initWithCGImage:imageRef
-                                              size:NSMakeSize(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef))];
-  CGImageRelease(imageRef);
-  self.previewView.image = image;
+  self.previewCaptureInFlight = YES;
+  CGDirectDisplayID displayID = self.virtualDisplayID;
+  uint64_t generation = self.previewGeneration;
+
+  dispatch_async(self.previewCaptureQueue, ^{
+    CGImageRef imageRef = VSMCopyDisplayImage(displayID);
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (generation != self.previewGeneration || displayID != self.virtualDisplayID || !self.virtualDisplay) {
+        if (imageRef) {
+          CGImageRelease(imageRef);
+        }
+        self.previewCaptureInFlight = NO;
+        return;
+      }
+
+      if (!imageRef) {
+        self.previewView.image = nil;
+        self.previewView.message = @"Preview unavailable. Grant Screen Recording permission and restart the app.";
+        self.previewCaptureInFlight = NO;
+        return;
+      }
+
+      NSImage *image = [[NSImage alloc] initWithCGImage:imageRef
+                                                  size:NSMakeSize(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef))];
+      CGImageRelease(imageRef);
+      self.previewView.image = image;
+      self.previewCaptureInFlight = NO;
+    });
+  });
 }
 
 - (void)refreshDisplayList:(id)sender {

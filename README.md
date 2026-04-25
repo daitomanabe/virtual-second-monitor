@@ -28,6 +28,7 @@ Live and installation work often depends on a second display, but the actual dis
 - Preview refresh mode selector:
   - `Lightweight (auto)` reduces preview frequency at high resolutions.
   - `60 Hz` targets smoother preview updates when motion fidelity matters.
+- Preview capture runs on a dedicated serial queue and skips overlapping frames, so high refresh settings do not block the app UI.
 - Online display list inside the app.
 - Shortcut to macOS Displays settings.
 - CLI helpers for automation and quick testing.
