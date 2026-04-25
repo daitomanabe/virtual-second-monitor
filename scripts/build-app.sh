@@ -29,7 +29,8 @@ cp "$root_dir/native/VirtualSecondMonitorApp-Info.plist" "$contents/Info.plist"
 plutil -lint "$contents/Info.plist" >/dev/null
 
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --deep --sign - "$bundle" >/dev/null
+  codesign_identity="${CODESIGN_IDENTITY:--}"
+  codesign --force --deep --sign "$codesign_identity" "$bundle" >/dev/null
 fi
 
 echo "$bundle"

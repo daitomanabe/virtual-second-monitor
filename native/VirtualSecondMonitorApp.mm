@@ -217,6 +217,7 @@ static NSString *VSMDisplayListText(void) {
 }
 
 typedef CGImageRef (*VSMCGDisplayCreateImageFunction)(CGDirectDisplayID displayID);
+typedef bool (*VSMCGPreflightScreenCaptureAccessFunction)(void);
 
 static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
   static VSMCGDisplayCreateImageFunction createImage = NULL;
@@ -232,6 +233,22 @@ static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
     return NULL;
   }
   return createImage(displayID);
+}
+
+static BOOL VSMScreenCaptureAccessGranted(void) {
+  static VSMCGPreflightScreenCaptureAccessFunction preflight = NULL;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    void *handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY);
+    if (handle) {
+      preflight = (VSMCGPreflightScreenCaptureAccessFunction)dlsym(handle, "CGPreflightScreenCaptureAccess");
+    }
+  });
+
+  if (!preflight) {
+    return YES;
+  }
+  return preflight() ? YES : NO;
 }
 
 @interface VSMPreviewView : NSView
@@ -363,6 +380,8 @@ static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
 @property(strong, nonatomic) NSButton *removeButton;
 @property(strong, nonatomic) NSButton *gridButton;
 @property(strong, nonatomic) NSPopUpButton *previewRatePopup;
+@property(strong, nonatomic) NSButton *refreshCaptureAccessButton;
+@property(strong, nonatomic) NSButton *openPrivacySettingsButton;
 @property(strong, nonatomic) NSTextField *statusLabel;
 @property(strong, nonatomic) NSTimer *previewTimer;
 @property(strong, nonatomic) NSTimer *displayListTimer;
@@ -556,6 +575,14 @@ static CGImageRef VSMCopyDisplayImage(CGDirectDisplayID displayID) {
   self.previewRatePopup.target = self;
   self.previewRatePopup.action = @selector(previewRateChanged:);
   [document addSubview:self.previewRatePopup];
+
+  self.refreshCaptureAccessButton = [self button:@"Refresh Recording Permission" action:@selector(refreshCaptureAccess:)];
+  self.refreshCaptureAccessButton.frame = VSMTopRect(&y, 18.0, 284.0, 32.0, 8.0);
+  [document addSubview:self.refreshCaptureAccessButton];
+
+  self.openPrivacySettingsButton = [self button:@"Open Recording Privacy" action:@selector(openRecordingPrivacySettings:)];
+  self.openPrivacySettingsButton.frame = VSMTopRect(&y, 18.0, 284.0, 32.0, 12.0);
+  [document addSubview:self.openPrivacySettingsButton];
 
   self.gridButton = [self checkbox:@"Show preview grid"];
   self.gridButton.state = NSControlStateValueOn;
@@ -853,6 +880,12 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
     return;
   }
 
+  if (!VSMScreenCaptureAccessGranted()) {
+    self.previewView.image = nil;
+    self.previewView.message = @"Preview paused. Enable Screen & System Audio Recording, then refresh permission.";
+    return;
+  }
+
   if (self.previewCaptureInFlight) {
     return;
   }
@@ -894,6 +927,22 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   self.displayListView.string = VSMDisplayListText();
 }
 
+- (void)refreshCaptureAccess:(id)sender {
+  (void)sender;
+  if (VSMScreenCaptureAccessGranted()) {
+    self.statusLabel.stringValue = @"Preview permission active";
+    if (self.virtualDisplay) {
+      self.previewView.message = @"Waiting for display frames...";
+      [self startPreviewTimer];
+    }
+    return;
+  }
+
+  self.previewView.image = nil;
+  self.previewView.message = @"Screen & System Audio Recording is not active for this app.";
+  self.statusLabel.stringValue = @"Preview permission inactive";
+}
+
 - (void)gridChanged:(id)sender {
   (void)sender;
   self.previewView.showGrid = self.gridButton.state == NSControlStateValueOn;
@@ -906,6 +955,23 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   if (![[NSWorkspace sharedWorkspace] openURL:url]) {
     [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:@"/System/Applications/System Settings.app"]];
   }
+}
+
+- (void)openRecordingPrivacySettings:(id)sender {
+  (void)sender;
+  NSArray<NSString *> *urls = @[
+    @"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+    @"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+  ];
+
+  for (NSString *urlString in urls) {
+    NSURL *url = [NSURL URLWithString:urlString];
+    if ([[NSWorkspace sharedWorkspace] openURL:url]) {
+      return;
+    }
+  }
+
+  [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:@"/System/Applications/System Settings.app"]];
 }
 
 - (void)showError:(NSString *)message {
