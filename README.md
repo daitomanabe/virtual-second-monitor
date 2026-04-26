@@ -55,6 +55,14 @@ Build and open the app:
 npm run start:app
 ```
 
+`start:app` opens the existing app bundle and only builds it if missing. This avoids unnecessarily changing the app signature and resetting macOS privacy permissions.
+
+Rebuild explicitly after source changes:
+
+```bash
+npm run rebuild:app
+```
+
 The app bundle is generated at:
 
 ```text
@@ -123,13 +131,13 @@ If the preview is blank:
 3. Grant Screen Recording permission to `Virtual Second Monitor.app`.
 4. Click `Refresh Recording Permission` in the app, or restart the app. The button refreshes capture state even if macOS' legacy preflight check reports a stale value.
 
-During development, repeated ad-hoc builds can make macOS privacy permissions appear unstable because the app's code signature changes. To use a stable signing identity, pass it to the build script:
+During development, repeated ad-hoc builds can make macOS privacy permissions appear unstable because the app's code signature changes. The build script automatically uses the first available `Apple Development` signing identity when present. To force a specific stable signing identity, pass it to the build script:
 
 ```bash
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" npm run build:app
 ```
 
-If `CODESIGN_IDENTITY` is not set, the build script uses ad-hoc signing.
+If no `Apple Development` identity is available and `CODESIGN_IDENTITY` is not set, the build script falls back to ad-hoc signing.
 
 ## Design
 

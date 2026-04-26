@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "build:app": "scripts/build-app.sh",
+    "rebuild:app": "scripts/build-app.sh",
     "open:app": "open \"build/Virtual Second Monitor.app\"",
-    "start:app": "npm run build:app && npm run open:app",
+    "start:app": "scripts/start-app.sh",
     "build:native": "scripts/build-native.sh",
     "start:native": "scripts/run-1080p.sh",
     "start:4k": "scripts/run-4k.sh",

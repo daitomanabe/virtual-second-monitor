@@ -30,7 +30,22 @@ cp "$root_dir/native/VirtualSecondMonitorApp-Info.plist" "$contents/Info.plist"
 plutil -lint "$contents/Info.plist" >/dev/null
 
 if command -v codesign >/dev/null 2>&1; then
-  codesign_identity="${CODESIGN_IDENTITY:--}"
+  codesign_identity="${CODESIGN_IDENTITY:-}"
+  if [ -z "$codesign_identity" ] && command -v security >/dev/null 2>&1; then
+    codesign_identity="$(
+      security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' \
+        | head -1
+    )"
+  fi
+
+  if [ -z "$codesign_identity" ]; then
+    codesign_identity="-"
+    echo "Signing app with ad-hoc identity. Screen Recording permission may reset after rebuilds." >&2
+  else
+    echo "Signing app with identity: $codesign_identity" >&2
+  fi
+
   codesign --force --deep --sign "$codesign_identity" "$bundle" >/dev/null
 fi
 
