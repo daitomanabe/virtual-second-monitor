@@ -139,6 +139,27 @@ CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" npm run build:app
 
 If no `Apple Development` identity is available and `CODESIGN_IDENTITY` is not set, the build script falls back to ad-hoc signing.
 
+## Fullscreen Output Notes
+
+macOS native fullscreen, especially the green window button fullscreen, creates a fullscreen Space. When the active app changes, macOS can reveal the menu bar on the display even if the content is fullscreen. This is normal macOS behavior and is not caused by the virtual display itself.
+
+For live output, avoid relying on native fullscreen Spaces when the output must stay completely clean.
+
+Recommended approaches:
+
+- Prefer borderless windowed fullscreen in the target app. The window should be borderless, sized to the output display bounds, and placed on the virtual or external display without entering macOS native fullscreen.
+- If you control the target AppKit app, use a borderless `NSWindow` on the output `NSScreen`, not the green fullscreen button. For strict presentation mode, use `NSApplicationPresentationHideDock` and `NSApplicationPresentationHideMenuBar`; for kiosk-style operation, also consider disabling app switching only during the show-critical section.
+- For browser-based output, prefer kiosk / app mode or a dedicated output runner window instead of regular browser fullscreen.
+- Keep the pointer away from the top edge of the output display; macOS reveals the menu bar when the pointer reaches the menu-bar region.
+- In System Settings, check Desktop & Dock and Control Center menu-bar behavior. Options such as hiding the menu bar automatically and disabling separate Spaces for displays can reduce accidental menu-bar exposure, but they affect the whole user session and may require logout/login.
+
+The safest rehearsal pattern is:
+
+1. Create the virtual display.
+2. Open the target content as a borderless output window on the virtual display.
+3. Switch apps on the operator display only.
+4. Confirm in the preview that no menu bar, Dock, Finder window, notification, or cursor appears on the output.
+
 ## Design
 
 The virtual display is process-scoped:
