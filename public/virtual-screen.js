@@ -21,7 +21,7 @@ export const defaultState = {
   mediaType: "",
   fillColor: "#111820",
   showHud: true,
-  showGrid: true,
+  showGrid: false,
   showSafeArea: false,
   showCursor: true,
   zoom: 42,

@@ -308,7 +308,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   if (self) {
     _displaySize = CGSizeMake(1920, 1080);
     _message = @"Create a virtual display to preview it here.";
-    _showGrid = YES;
+    _showGrid = NO;
     self.wantsLayer = YES;
     self.layer.cornerRadius = 10.0;
     self.layer.masksToBounds = YES;
@@ -624,7 +624,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   [document addSubview:self.openPrivacySettingsButton];
 
   self.gridButton = [self checkbox:@"Show preview grid"];
-  self.gridButton.state = NSControlStateValueOn;
+  self.gridButton.state = NSControlStateValueOff;
   self.gridButton.target = self;
   self.gridButton.action = @selector(gridChanged:);
   self.gridButton.frame = VSMTopRect(&y, 18.0, 284.0, 24.0, 10.0);
@@ -645,6 +645,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   [content addSubview:self.previewMetaLabel];
 
   self.previewView = [[VSMPreviewView alloc] initWithFrame:NSZeroRect];
+  self.previewView.showGrid = self.gridButton.state == NSControlStateValueOn;
   [content addSubview:self.previewView];
 
   NSTextField *displayListLabel = [self label:@"Online Displays" size:14.0 weight:NSFontWeightBold];
