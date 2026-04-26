@@ -18,6 +18,16 @@ Live and installation work often depends on a second display, but the actual dis
 
 外付けディスプレイ、プロジェクター、LED プロセッサーなどが手元にない状態でも、macOS からは実際のセカンドディスプレイとして認識される仮想ディスプレイを作成できます。ライブや展示の前に、出力先の検出、フルスクリーン表示、解像度設定、4K/8K レイアウト、プレビュー確認を事前にテストできるようにするためのツールです。
 
+## Screenshots
+
+Main app interface:
+
+![Virtual Second Monitor app interface](screenshots/AppScreenshot.png)
+
+Virtual display shown in macOS Displays settings:
+
+![macOS Displays settings showing the virtual display](screenshots/Displays.png)
+
 ## Features
 
 - Creates a macOS-recognized virtual display using `CGVirtualDisplay`.
