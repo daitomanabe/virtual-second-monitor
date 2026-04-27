@@ -197,4 +197,4 @@ npm run start:web
 
 ## License
 
-No license has been specified yet. Public visibility does not grant reuse rights by itself.
+MIT License. See [LICENSE](LICENSE).
