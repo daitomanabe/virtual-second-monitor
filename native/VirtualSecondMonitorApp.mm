@@ -5,184 +5,8 @@
 #import <dlfcn.h>
 #import <stdlib.h>
 
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplayMode : NSObject
-@property(readonly, nonatomic) unsigned int width;
-@property(readonly, nonatomic) unsigned int height;
-@property(readonly, nonatomic) double refreshRate;
-- (id)initWithWidth:(unsigned int)width height:(unsigned int)height refreshRate:(double)refreshRate;
-@end
-
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplaySettings : NSObject
-@property(strong, nonatomic) NSArray *modes;
-@property(nonatomic) unsigned int hiDPI;
-@property(nonatomic) unsigned int rotation;
-- (id)init;
-@end
-
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplayDescriptor : NSObject
-@property(nonatomic) unsigned int vendorID;
-@property(nonatomic) unsigned int productID;
-@property(nonatomic) unsigned int serialNum;
-@property(nonatomic) unsigned int serialNumber;
-@property(strong, nonatomic) NSString *name;
-@property(nonatomic) CGSize sizeInMillimeters;
-@property(nonatomic) unsigned int maxPixelsWide;
-@property(nonatomic) unsigned int maxPixelsHigh;
-@property(nonatomic) CGPoint redPrimary;
-@property(nonatomic) CGPoint greenPrimary;
-@property(nonatomic) CGPoint bluePrimary;
-@property(nonatomic) CGPoint whitePoint;
-@property(retain, nonatomic) id queue;
-@property(copy, nonatomic) id terminationHandler;
-- (id)init;
-- (void)setDispatchQueue:(id)queue;
-@end
-
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplay : NSObject
-@property(readonly, nonatomic) unsigned int displayID;
-@property(readonly, nonatomic) unsigned int vendorID;
-@property(readonly, nonatomic) unsigned int productID;
-@property(readonly, nonatomic) unsigned int serialNum;
-@property(readonly, nonatomic) NSString *name;
-@property(readonly, nonatomic) NSArray *modes;
-@property(readonly, nonatomic) unsigned int hiDPI;
-- (id)initWithDescriptor:(CGVirtualDisplayDescriptor *)descriptor;
-- (BOOL)applySettings:(CGVirtualDisplaySettings *)settings;
-@end
-
-typedef struct {
-  unsigned int width;
-  unsigned int height;
-  unsigned int ppi;
-  double refreshRate;
-  BOOL hiDPI;
-  unsigned int serialNumber;
-  unsigned int vendorID;
-  unsigned int productID;
-  NSString *name;
-} VSMVirtualDisplayConfig;
-
-static VSMVirtualDisplayConfig VSMDefaultConfig(void) {
-  VSMVirtualDisplayConfig config;
-  config.width = 1920;
-  config.height = 1080;
-  config.ppi = 110;
-  config.refreshRate = 60.0;
-  config.hiDPI = NO;
-  config.serialNumber = 0;
-  config.vendorID = 505;
-  config.productID = 22136;
-  config.name = @"Debug Second Display";
-  return config;
-}
-
-static unsigned int VSMAutoSerialNumber(void) {
-  return 200000 + arc4random_uniform(700000);
-}
-
-static NSString *VSMErrorString(NSString *message) {
-  return message ?: @"Unknown error";
-}
-
-static CGVirtualDisplay *VSMCreateVirtualDisplay(VSMVirtualDisplayConfig config, NSString **errorMessage) API_AVAILABLE(macos(10.14));
-static CGVirtualDisplay *VSMCreateVirtualDisplay(VSMVirtualDisplayConfig config, NSString **errorMessage) {
-  Class displayClass = NSClassFromString(@"CGVirtualDisplay");
-  Class descriptorClass = NSClassFromString(@"CGVirtualDisplayDescriptor");
-  Class settingsClass = NSClassFromString(@"CGVirtualDisplaySettings");
-  Class modeClass = NSClassFromString(@"CGVirtualDisplayMode");
-
-  if (!displayClass || !descriptorClass || !settingsClass || !modeClass) {
-    if (errorMessage) {
-      *errorMessage = @"CGVirtualDisplay is not available on this macOS build.";
-    }
-    return nil;
-  }
-
-  if (config.width < 160 || config.height < 120) {
-    if (errorMessage) {
-      *errorMessage = @"Resolution is too small.";
-    }
-    return nil;
-  }
-
-  if (config.ppi == 0) {
-    if (errorMessage) {
-      *errorMessage = @"PPI must be greater than zero.";
-    }
-    return nil;
-  }
-
-  if (config.hiDPI && (config.width % 2 != 0 || config.height % 2 != 0)) {
-    if (errorMessage) {
-      *errorMessage = @"HiDPI requires even width and height.";
-    }
-    return nil;
-  }
-
-  CGVirtualDisplayDescriptor *descriptor = [[CGVirtualDisplayDescriptor alloc] init];
-  descriptor.name = config.name.length > 0 ? config.name : @"Debug Second Display";
-  descriptor.maxPixelsWide = config.width;
-  descriptor.maxPixelsHigh = config.height;
-  descriptor.sizeInMillimeters = CGSizeMake(25.4 * config.width / config.ppi,
-                                             25.4 * config.height / config.ppi);
-  descriptor.whitePoint = CGPointMake(0.3125, 0.3291);
-  descriptor.bluePrimary = CGPointMake(0.1494, 0.0557);
-  descriptor.greenPrimary = CGPointMake(0.2559, 0.6983);
-  descriptor.redPrimary = CGPointMake(0.6797, 0.3203);
-  descriptor.vendorID = config.vendorID;
-  descriptor.productID = config.productID;
-
-  unsigned int serialNumber = config.serialNumber > 0 ? config.serialNumber : VSMAutoSerialNumber();
-  if ([descriptor respondsToSelector:@selector(setSerialNum:)]) {
-    descriptor.serialNum = serialNumber;
-  }
-  if ([descriptor respondsToSelector:@selector(setSerialNumber:)]) {
-    descriptor.serialNumber = serialNumber;
-  }
-  if ([descriptor respondsToSelector:@selector(setQueue:)]) {
-    descriptor.queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
-  }
-  if ([descriptor respondsToSelector:@selector(setDispatchQueue:)]) {
-    [descriptor setDispatchQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)];
-  }
-  if ([descriptor respondsToSelector:@selector(setTerminationHandler:)]) {
-    descriptor.terminationHandler = ^{};
-  }
-
-  CGVirtualDisplay *display = [[CGVirtualDisplay alloc] initWithDescriptor:descriptor];
-  if (!display) {
-    if (errorMessage) {
-      *errorMessage = @"CGVirtualDisplay initWithDescriptor failed.";
-    }
-    return nil;
-  }
-
-  CGVirtualDisplaySettings *settings = [[CGVirtualDisplaySettings alloc] init];
-  settings.hiDPI = config.hiDPI ? 1 : 0;
-  if ([settings respondsToSelector:@selector(setRotation:)]) {
-    settings.rotation = 0;
-  }
-
-  unsigned int modeWidth = config.hiDPI ? config.width / 2 : config.width;
-  unsigned int modeHeight = config.hiDPI ? config.height / 2 : config.height;
-  CGVirtualDisplayMode *mode = [[CGVirtualDisplayMode alloc] initWithWidth:modeWidth
-                                                                    height:modeHeight
-                                                               refreshRate:config.refreshRate];
-  settings.modes = @[ mode ];
-
-  if (![display applySettings:settings]) {
-    if (errorMessage) {
-      *errorMessage = @"CGVirtualDisplay applySettings failed.";
-    }
-    return nil;
-  }
-
-  return display;
-}
+#import "VSMDisplayManager.h"
+#import <math.h>
 
 static NSString *VSMDisplayListText(void) {
   enum { maxDisplays = 32 };
@@ -400,7 +224,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
 
 @end
 
-@interface VSMAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
+@interface VSMAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate>
 @property(strong, nonatomic) NSWindow *window;
 @property(strong, nonatomic) NSScrollView *controlScrollView;
 @property(strong, nonatomic) VSMPreviewView *previewView;
@@ -417,6 +241,10 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
 @property(strong, nonatomic) NSButton *hiDPIButton;
 @property(strong, nonatomic) NSButton *createButton;
 @property(strong, nonatomic) NSButton *removeButton;
+@property(strong, nonatomic) NSButton *removeAllButton;
+@property(strong, nonatomic) NSTableView *monitorTable;
+@property(strong, nonatomic) NSTextField *monitorCountLabel;
+@property(nonatomic) BOOL reloadingMonitorTable;
 @property(strong, nonatomic) NSButton *gridButton;
 @property(strong, nonatomic) NSPopUpButton *previewRatePopup;
 @property(strong, nonatomic) NSButton *refreshCaptureAccessButton;
@@ -427,12 +255,9 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
 @property(strong, nonatomic) dispatch_queue_t previewCaptureQueue;
 @property(nonatomic) BOOL previewCaptureInFlight;
 @property(nonatomic) uint64_t previewGeneration;
-@property(strong, nonatomic) CGVirtualDisplay *virtualDisplay;
-@property(nonatomic) CGDirectDisplayID virtualDisplayID;
-@property(copy, nonatomic) NSString *currentDisplayName;
-@property(nonatomic) unsigned int currentDisplayWidth;
-@property(nonatomic) unsigned int currentDisplayHeight;
-@property(nonatomic) BOOL currentDisplayHiDPI;
+@property(strong, nonatomic) VSMDisplayManager *displayManager;
+@property(nonatomic) CGDirectDisplayID selectedDisplayID;
+@property(readonly, nonatomic) VSMManagedDisplay *selectedDisplay;
 @property(strong, nonatomic) NSArray<NSDictionary *> *presets;
 @end
 
@@ -440,6 +265,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
   (void)notification;
+  self.displayManager = [[VSMDisplayManager alloc] init];
   self.previewCaptureQueue = dispatch_queue_create("ws.daito.virtual-second-monitor.preview-capture", DISPATCH_QUEUE_SERIAL);
   [self buildMenu];
   [self buildWindow];
@@ -460,7 +286,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   (void)notification;
   [self.previewTimer invalidate];
   [self.displayListTimer invalidate];
-  self.virtualDisplay = nil;
+  [self.displayManager removeAllDisplays];
 }
 
 - (void)buildMenu {
@@ -489,7 +315,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
     @{@"title": @"8K UHD 7680 x 4320", @"width": @7680, @"height": @4320, @"ppi": @280, @"hidpi": @YES}
   ];
 
-  NSRect frame = NSMakeRect(0, 0, 1060, 720);
+  NSRect frame = NSMakeRect(0, 0, 1160, 820);
   self.window = [[NSWindow alloc] initWithContentRect:frame
                                            styleMask:(NSWindowStyleMaskTitled |
                                                       NSWindowStyleMaskClosable |
@@ -498,7 +324,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
                                              backing:NSBackingStoreBuffered
                                                defer:NO];
   self.window.title = @"Virtual Second Monitor";
-  self.window.minSize = NSMakeSize(980, 640);
+  self.window.minSize = NSMakeSize(1060, 760);
   self.window.delegate = self;
   [self.window center];
 
@@ -516,7 +342,8 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
                                                name:NSWindowDidResizeNotification
                                              object:self.window];
   [self.window makeKeyAndOrderFront:nil];
-  [NSApp activateIgnoringOtherApps:YES];
+  [self reloadMonitors];
+  [self.controlScrollView.documentView scrollPoint:NSMakePoint(0, NSHeight(self.controlScrollView.documentView.bounds))];
 }
 
 - (void)buildControlsInView:(NSView *)content {
@@ -526,17 +353,17 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   self.controlScrollView.drawsBackground = NO;
   [content addSubview:self.controlScrollView];
 
-  NSView *document = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 320, 920)];
+  NSView *document = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 320, 1100)];
   document.wantsLayer = YES;
   document.layer.backgroundColor = [NSColor colorWithCalibratedRed:0.105 green:0.118 blue:0.137 alpha:1.0].CGColor;
   self.controlScrollView.documentView = document;
 
-  CGFloat y = 888.0;
+  CGFloat y = 1068.0;
   NSTextField *title = [self label:@"Virtual Second Monitor" size:22.0 weight:NSFontWeightBold];
   title.frame = VSMTopRect(&y, 18.0, 284.0, 30.0, 12.0);
   [document addSubview:title];
 
-  NSTextField *subtitle = [self label:@"Create an OS-recognized second display and inspect it live." size:12.0 weight:NSFontWeightRegular];
+  NSTextField *subtitle = [self label:@"Connect up to 8 virtual monitors. Select one to preview or remove." size:12.0 weight:NSFontWeightRegular];
   subtitle.textColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.62];
   subtitle.frame = VSMTopRect(&y, 18.0, 284.0, 36.0, 18.0);
   [document addSubview:subtitle];
@@ -546,7 +373,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   self.statusLabel.frame = VSMTopRect(&y, 18.0, 284.0, 22.0, 18.0);
   [document addSubview:self.statusLabel];
 
-  [self addSectionLabel:@"Preset" toView:document y:&y];
+  [self addSectionLabel:@"New monitor preset" toView:document y:&y];
   self.presetPopup = [[NSPopUpButton alloc] initWithFrame:VSMTopRect(&y, 18.0, 284.0, 32.0, 14.0)];
   for (NSDictionary *preset in self.presets) {
     [self.presetPopup addItemWithTitle:preset[@"title"]];
@@ -557,7 +384,7 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
 
   [self addSectionLabel:@"Display" toView:document y:&y];
   [self addSmallLabel:@"Name" toView:document y:&y];
-  self.nameField = [self textField:@"Debug Second Display"];
+  self.nameField = [self textField:@"Virtual Monitor 1"];
   self.nameField.frame = VSMTopRect(&y, 18.0, 284.0, 30.0, 10.0);
   [document addSubview:self.nameField];
 
@@ -590,13 +417,9 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   [document addSubview:self.hiDPIButton];
 
   [self addSectionLabel:@"Actions" toView:document y:&y];
-  self.createButton = [self button:@"Create Display" action:@selector(createDisplay:)];
-  self.removeButton = [self button:@"Remove" action:@selector(removeDisplay:)];
-  self.createButton.frame = NSMakeRect(18.0, y - 34.0, 172.0, 34.0);
-  self.removeButton.frame = NSMakeRect(202.0, y - 34.0, 100.0, 34.0);
-  y -= 46.0;
+  self.createButton = [self button:@"Add Monitor" action:@selector(createDisplay:)];
+  self.createButton.frame = VSMTopRect(&y, 18.0, 284.0, 34.0, 12.0);
   [document addSubview:self.createButton];
-  [document addSubview:self.removeButton];
 
   NSButton *settingsButton = [self button:@"Open Displays Settings" action:@selector(openDisplaySettings:)];
   settingsButton.frame = VSMTopRect(&y, 18.0, 284.0, 32.0, 10.0);
@@ -634,13 +457,53 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   note.textColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.58];
   note.frame = VSMTopRect(&y, 18.0, 284.0, 56.0, 0.0);
   [document addSubview:note];
+  CGFloat offset = 24.0 - y;
+  for (NSView *view in document.subviews) {
+    NSRect frame = view.frame;
+    frame.origin.y += offset;
+    view.frame = frame;
+  }
+  [document setFrameSize:NSMakeSize(320, 1100 + offset)];
 }
 
 - (void)buildPreviewInView:(NSView *)content {
+  self.monitorCountLabel = [self label:@"Virtual Monitors — 0 / 8" size:18 weight:NSFontWeightBold];
+  [content addSubview:self.monitorCountLabel];
+  self.removeButton = [self button:@"Remove Selected" action:@selector(removeDisplay:)];
+  self.removeAllButton = [self button:@"Remove All" action:@selector(removeAllDisplays:)];
+  [content addSubview:self.removeButton];
+  [content addSubview:self.removeAllButton];
+
+  NSScrollView *monitors = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+  monitors.identifier = @"monitorScroll";
+  monitors.hasVerticalScroller = YES;
+  monitors.borderType = NSBezelBorder;
+  self.monitorTable = [[NSTableView alloc] initWithFrame:NSZeroRect];
+  self.monitorTable.rowHeight = 21;
+  self.monitorTable.intercellSpacing = NSMakeSize(3, 1);
+  self.monitorTable.usesAlternatingRowBackgroundColors = YES;
+  self.monitorTable.allowsMultipleSelection = NO;
+  self.monitorTable.allowsEmptySelection = NO;
+  for (NSArray *columnInfo in @[@[@"name", @"Monitor", @220], @[@"mode", @"Resolution", @160],
+                               @[@"id", @"Display ID", @80], @[@"serial", @"Serial", @100]]) {
+    NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:columnInfo[0]];
+    column.title = columnInfo[1];
+    column.width = [columnInfo[2] doubleValue];
+    column.minWidth = 60;
+    column.editable = NO;
+    [self.monitorTable addTableColumn:column];
+  }
+  self.monitorTable.dataSource = self;
+  self.monitorTable.delegate = self;
+  monitors.documentView = self.monitorTable;
+  [content addSubview:monitors];
+
   self.previewTitleLabel = [self label:@"Preview" size:18.0 weight:NSFontWeightBold];
   [content addSubview:self.previewTitleLabel];
 
   self.previewMetaLabel = [self label:@"No virtual display" size:13.0 weight:NSFontWeightRegular];
+  self.previewTitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  self.previewMetaLabel.lineBreakMode = NSLineBreakByTruncatingTail;
   self.previewMetaLabel.textColor = [NSColor colorWithCalibratedWhite:1.0 alpha:0.62];
   [content addSubview:self.previewMetaLabel];
 
@@ -657,7 +520,12 @@ static BOOL VSMScreenCaptureAccessGranted(void) {
   scroll.hasVerticalScroller = YES;
   scroll.hasHorizontalScroller = YES;
   scroll.borderType = NSBezelBorder;
-  self.displayListView = [[NSTextView alloc] initWithFrame:NSZeroRect];
+  self.displayListView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 1100, 124)];
+  self.displayListView.minSize = NSMakeSize(1100, 124);
+  self.displayListView.maxSize = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
+  self.displayListView.verticallyResizable = YES;
+  self.displayListView.horizontallyResizable = NO;
+  self.displayListView.textContainer.widthTracksTextView = YES;
   self.displayListView.editable = NO;
   self.displayListView.selectable = YES;
   self.displayListView.font = [NSFont monospacedSystemFontOfSize:12.0 weight:NSFontWeightRegular];
@@ -736,22 +604,20 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   CGFloat rightWidth = MAX(320.0, width - rightX - gap);
 
   self.controlScrollView.frame = NSMakeRect(0, 0, leftWidth, height);
-  self.previewTitleLabel.frame = NSMakeRect(rightX, height - 42.0, 220.0, 24.0);
-  self.previewMetaLabel.frame = NSMakeRect(rightX + 220.0, height - 40.0, rightWidth - 220.0, 20.0);
-
-  CGFloat listHeight = 138.0;
-  CGFloat listY = 24.0;
-  CGFloat listLabelY = listY + listHeight + 10.0;
-  CGFloat previewY = listLabelY + 34.0;
-  CGFloat previewHeight = MAX(260.0, height - previewY - 62.0);
-
-  self.previewView.frame = NSMakeRect(rightX, previewY, rightWidth, previewHeight);
+  self.monitorCountLabel.frame = NSMakeRect(rightX, height - 40, rightWidth - 270, 24);
+  self.removeButton.frame = NSMakeRect(width - 276, height - 43, 142, 30);
+  self.removeAllButton.frame = NSMakeRect(width - 130, height - 43, 112, 30);
+  self.previewTitleLabel.frame = NSMakeRect(rightX, height - 290, rightWidth, 24);
+  self.previewMetaLabel.frame = NSMakeRect(rightX, height - 314, rightWidth, 20);
+  self.previewView.frame = NSMakeRect(rightX, 184, rightWidth, height - 510);
 
   for (NSView *view in content.subviews) {
-    if ([view.identifier isEqualToString:@"displayListLabel"]) {
-      view.frame = NSMakeRect(rightX, listLabelY, rightWidth, 20.0);
+    if ([view.identifier isEqualToString:@"monitorScroll"]) {
+      view.frame = NSMakeRect(rightX, height - 260, rightWidth, 202);
+    } else if ([view.identifier isEqualToString:@"displayListLabel"]) {
+      view.frame = NSMakeRect(rightX, 152, rightWidth, 20);
     } else if ([view.identifier isEqualToString:@"displayListScroll"]) {
-      view.frame = NSMakeRect(rightX, listY, rightWidth, listHeight);
+      view.frame = NSMakeRect(rightX, 18, rightWidth, 124);
     }
   }
 }
@@ -772,27 +638,125 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   self.hiDPIButton.state = [preset[@"hidpi"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
 }
 
-- (VSMVirtualDisplayConfig)configFromFields {
-  VSMVirtualDisplayConfig config = VSMDefaultConfig();
-  config.name = self.nameField.stringValue.length > 0 ? self.nameField.stringValue : @"Debug Second Display";
-  config.width = (unsigned int)MAX(0, self.widthField.integerValue);
-  config.height = (unsigned int)MAX(0, self.heightField.integerValue);
-  config.ppi = (unsigned int)MAX(0, self.ppiField.integerValue);
-  config.refreshRate = MAX(1.0, self.refreshField.doubleValue);
-  config.hiDPI = self.hiDPIButton.state == NSControlStateValueOn;
-  config.serialNumber = self.serialField.stringValue.length > 0 ? (unsigned int)MAX(0, self.serialField.integerValue) : 0;
-  return config;
+- (BOOL)readUnsignedField:(NSTextField *)field value:(unsigned int *)value {
+  NSString *text = [field.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  if (text.length == 0 || [text rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789"] invertedSet]].location != NSNotFound) return NO;
+  unsigned long long number = 0;
+  NSScanner *scanner = [NSScanner scannerWithString:text];
+  if (![scanner scanUnsignedLongLong:&number] || !scanner.isAtEnd || number > UINT_MAX) return NO;
+  *value = (unsigned int)number;
+  return YES;
+}
+
+- (BOOL)configFromFields:(VSMVirtualDisplayConfig *)config {
+  *config = VSMDefaultConfig();
+  config->name = self.nameField.stringValue.length > 0 ? self.nameField.stringValue : [self nextMonitorName];
+  if (![self readUnsignedField:self.widthField value:&config->width] ||
+      ![self readUnsignedField:self.heightField value:&config->height] ||
+      ![self readUnsignedField:self.ppiField value:&config->ppi]) return NO;
+  NSString *serialText = [self.serialField.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  if (serialText.length > 0 && ![self readUnsignedField:self.serialField value:&config->serialNumber]) return NO;
+  NSScanner *scanner = [NSScanner scannerWithString:self.refreshField.stringValue];
+  double refresh = 0;
+  if (![scanner scanDouble:&refresh] || !scanner.isAtEnd || !isfinite(refresh) || refresh <= 0) return NO;
+  config->refreshRate = refresh;
+  config->hiDPI = self.hiDPIButton.state == NSControlStateValueOn;
+  return YES;
+}
+
+- (VSMManagedDisplay *)selectedDisplay {
+  for (VSMManagedDisplay *entry in self.displayManager.displays) {
+    if (entry.displayID == self.selectedDisplayID) return entry;
+  }
+  return nil;
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
+  (void)tableView;
+  return self.displayManager.displays.count;
+}
+
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)column row:(NSInteger)row {
+  (void)tableView;
+  NSArray<VSMManagedDisplay *> *displays = self.displayManager.displays;
+  if (row < 0 || row >= (NSInteger)displays.count) return @"";
+  VSMManagedDisplay *entry = displays[row];
+  VSMVirtualDisplayConfig config = entry.config;
+  if ([column.identifier isEqualToString:@"name"]) return config.name;
+  if ([column.identifier isEqualToString:@"mode"]) return [NSString stringWithFormat:@"%u x %u%@", config.width, config.height, config.hiDPI ? @" HiDPI" : @""];
+  if ([column.identifier isEqualToString:@"id"]) return [NSString stringWithFormat:@"%u", entry.displayID];
+  return [NSString stringWithFormat:@"%u", config.serialNumber];
+}
+
+- (void)tableViewSelectionDidChange:(NSNotification *)notification {
+  (void)notification;
+  if (self.reloadingMonitorTable) return;
+  NSInteger row = self.monitorTable.selectedRow;
+  NSArray<VSMManagedDisplay *> *displays = self.displayManager.displays;
+  self.selectedDisplayID = row >= 0 && row < (NSInteger)displays.count ? displays[row].displayID : 0;
+  [self updateSelection];
+}
+
+- (void)reloadMonitors {
+  self.reloadingMonitorTable = YES;
+  [self.monitorTable reloadData];
+  NSInteger row = -1;
+  NSArray<VSMManagedDisplay *> *displays = self.displayManager.displays;
+  for (NSUInteger i = 0; i < displays.count; i++) {
+    if (displays[i].displayID == self.selectedDisplayID) row = i;
+  }
+  if (row < 0 && displays.count > 0) {
+    row = 0;
+    self.selectedDisplayID = displays[0].displayID;
+  }
+  if (row >= 0) {
+    [self.monitorTable selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
+    [self.monitorTable scrollRowToVisible:row];
+  } else {
+    self.selectedDisplayID = 0;
+    [self.monitorTable deselectAll:nil];
+  }
+  self.reloadingMonitorTable = NO;
+  self.monitorCountLabel.stringValue = [NSString stringWithFormat:@"Virtual Monitors — %lu / 8", (unsigned long)displays.count];
+  self.createButton.enabled = displays.count < VSMMaximumDisplayCount;
+  self.createButton.title = self.createButton.enabled ? @"Add Monitor" : @"Maximum 8 Monitors";
+  self.removeAllButton.enabled = displays.count > 0;
+  [self updateSelection];
+}
+
+- (void)updateSelection {
+  [self.previewTimer invalidate];
+  self.previewTimer = nil;
+  self.previewGeneration++;
+  self.previewView.image = nil;
+  VSMManagedDisplay *selected = self.selectedDisplay;
+  self.removeButton.enabled = selected != nil;
+  self.previewTitleLabel.stringValue = selected ? [NSString stringWithFormat:@"Preview — %@", selected.config.name] : @"Preview";
+  self.previewView.message = selected ? @"Waiting for display frames..." : @"Add a monitor to preview it here.";
+  if (selected) {
+    self.previewView.displaySize = CGSizeMake(selected.config.width, selected.config.height);
+    [self startPreviewTimer];
+  }
+  [self updatePreviewMetaLabel];
+}
+
+- (NSString *)nextMonitorName {
+  NSMutableSet<NSString *> *names = [NSMutableSet set];
+  for (VSMManagedDisplay *entry in self.displayManager.displays) [names addObject:entry.config.name];
+  for (NSUInteger i = 1; ; i++) {
+    NSString *name = [NSString stringWithFormat:@"Virtual Monitor %lu", (unsigned long)i];
+    if (![names containsObject:name]) return name;
+  }
 }
 
 - (void)createDisplay:(id)sender {
   (void)sender;
-
-  if (self.virtualDisplay) {
-    self.virtualDisplay = nil;
-    self.virtualDisplayID = 0;
+  VSMVirtualDisplayConfig config;
+  if (![self configFromFields:&config]) {
+    self.statusLabel.stringValue = @"Invalid monitor settings";
+    [self showError:@"Use whole numbers for resolution, PPI and serial, and a positive refresh rate."];
+    return;
   }
-
-  VSMVirtualDisplayConfig config = [self configFromFields];
   double requestedPixels = (double)config.width * (double)config.height;
   if (!config.hiDPI && requestedPixels >= 3840.0 * 2160.0) {
     config.hiDPI = YES;
@@ -800,60 +764,41 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   }
 
   NSString *errorMessage = nil;
-  CGVirtualDisplay *display = VSMCreateVirtualDisplay(config, &errorMessage);
+  VSMManagedDisplay *display = [self.displayManager addDisplayWithConfig:config error:&errorMessage];
   if (!display) {
-    [self showError:VSMErrorString(errorMessage)];
-    self.statusLabel.stringValue = @"Create failed";
+    self.statusLabel.stringValue = @"Could not add monitor";
+    [self showError:errorMessage ?: @"Unknown error"];
     return;
   }
-
-  self.virtualDisplay = display;
-  self.virtualDisplayID = display.displayID;
-  self.currentDisplayName = config.name;
-  self.currentDisplayWidth = config.width;
-  self.currentDisplayHeight = config.height;
-  self.currentDisplayHiDPI = config.hiDPI;
-  self.previewView.displaySize = CGSizeMake(config.width, config.height);
-  self.previewView.message = @"Waiting for display frames...";
-  [self updatePreviewMetaLabel];
-  self.statusLabel.stringValue = [NSString stringWithFormat:@"Online: display id %u", self.virtualDisplayID];
-
-  [self startPreviewTimer];
+  self.selectedDisplayID = display.displayID;
+  self.statusLabel.stringValue = [NSString stringWithFormat:@"Added monitor id %u", display.displayID];
+  self.nameField.stringValue = [self nextMonitorName];
+  self.serialField.stringValue = @"";
+  [self reloadMonitors];
   [self refreshDisplayList:nil];
 }
 
 - (void)removeDisplay:(id)sender {
   (void)sender;
-  if (!self.virtualDisplay) {
-    self.statusLabel.stringValue = @"No virtual display to remove";
-    return;
-  }
+  if (!self.selectedDisplay) return;
+  CGDirectDisplayID removedID = self.selectedDisplayID;
+  [self.displayManager removeDisplayWithID:removedID];
+  [self reloadMonitors];
+  self.statusLabel.stringValue = [NSString stringWithFormat:@"Removed monitor id %u", removedID];
+  [self refreshDisplayList:nil];
+}
 
-  CGDirectDisplayID removedID = self.virtualDisplayID;
-  self.previewGeneration++;
-  self.previewCaptureInFlight = NO;
-  self.virtualDisplay = nil;
-  self.virtualDisplayID = 0;
-  self.currentDisplayName = nil;
-  self.currentDisplayWidth = 0;
-  self.currentDisplayHeight = 0;
-  self.currentDisplayHiDPI = NO;
-  self.previewView.image = nil;
-  self.previewView.message = @"Virtual display removed.";
-  self.previewMetaLabel.stringValue = @"No virtual display";
-  self.statusLabel.stringValue = [NSString stringWithFormat:@"Removed display id %u", removedID];
-  [self.previewTimer invalidate];
-  self.previewTimer = nil;
-
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-    [self refreshDisplayList:nil];
-  });
+- (void)removeAllDisplays:(id)sender {
+  (void)sender;
+  [self.displayManager removeAllDisplays];
+  [self reloadMonitors];
+  self.statusLabel.stringValue = @"All virtual monitors removed";
+  [self refreshDisplayList:nil];
 }
 
 - (void)startPreviewTimer {
   [self.previewTimer invalidate];
   self.previewGeneration++;
-  self.previewCaptureInFlight = NO;
   NSTimeInterval interval = [self previewInterval];
   self.previewTimer = [NSTimer timerWithTimeInterval:interval
                                               target:self
@@ -893,30 +838,30 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
 
 - (void)previewRateChanged:(id)sender {
   (void)sender;
-  if (self.virtualDisplay) {
+  if (self.selectedDisplay) {
     [self startPreviewTimer];
     [self updatePreviewMetaLabel];
   }
 }
 
 - (void)updatePreviewMetaLabel {
-  if (!self.virtualDisplay || self.virtualDisplayID == 0) {
+  if (!self.selectedDisplay || self.selectedDisplayID == 0) {
     self.previewMetaLabel.stringValue = @"No virtual display";
     return;
   }
 
   self.previewMetaLabel.stringValue = [NSString stringWithFormat:@"id %u  %@  %ux%u%@  %@",
-                                       self.virtualDisplayID,
-                                       self.currentDisplayName ?: @"Debug Second Display",
-                                       self.currentDisplayWidth,
-                                       self.currentDisplayHeight,
-                                       self.currentDisplayHiDPI ? @"  HiDPI" : @"",
+                                       self.selectedDisplayID,
+                                       self.selectedDisplay.config.name,
+                                       self.selectedDisplay.config.width,
+                                       self.selectedDisplay.config.height,
+                                       self.selectedDisplay.config.hiDPI ? @"  HiDPI" : @"",
                                        [self previewRateDescription]];
 }
 
 - (void)updatePreview:(id)sender {
   (void)sender;
-  if (!self.virtualDisplay || self.virtualDisplayID == 0) {
+  if (!self.selectedDisplay || self.selectedDisplayID == 0) {
     return;
   }
 
@@ -925,7 +870,7 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   }
 
   self.previewCaptureInFlight = YES;
-  CGDirectDisplayID displayID = self.virtualDisplayID;
+  CGDirectDisplayID displayID = self.selectedDisplayID;
   uint64_t generation = self.previewGeneration;
 
   if (@available(macOS 14.0, *)) {
@@ -1003,27 +948,35 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
                            generation:(uint64_t)generation
                         failureMessage:(NSString *)failureMessage {
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (generation != self.previewGeneration || displayID != self.virtualDisplayID || !self.virtualDisplay) {
-      if (imageRef) {
-        CGImageRelease(imageRef);
-      }
-      self.previewCaptureInFlight = NO;
-      return;
-    }
-
-    if (!imageRef) {
-      self.previewView.image = nil;
-      self.previewView.message = failureMessage ?: @"Preview unavailable.";
-      self.previewCaptureInFlight = NO;
-      return;
-    }
-
-    NSImage *image = [[NSImage alloc] initWithCGImage:imageRef
-                                                size:NSMakeSize(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef))];
-    CGImageRelease(imageRef);
-    self.previewView.image = image;
-    self.previewCaptureInFlight = NO;
+    [self applyPreviewImage:imageRef displayID:displayID generation:generation failureMessage:failureMessage];
   });
+}
+
+// Main-thread completion. Only one capture remains in flight across selection changes.
+- (void)applyPreviewImage:(CGImageRef)imageRef
+                displayID:(CGDirectDisplayID)displayID
+               generation:(uint64_t)generation
+            failureMessage:(NSString *)failureMessage {
+  if (generation != self.previewGeneration || displayID != self.selectedDisplayID || !self.selectedDisplay) {
+    if (imageRef) {
+      CGImageRelease(imageRef);
+    }
+    self.previewCaptureInFlight = NO;
+    return;
+  }
+
+  if (!imageRef) {
+    self.previewView.image = nil;
+    self.previewView.message = failureMessage ?: @"Preview unavailable.";
+    self.previewCaptureInFlight = NO;
+    return;
+  }
+
+  NSImage *image = [[NSImage alloc] initWithCGImage:imageRef
+                                              size:NSMakeSize(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef))];
+  CGImageRelease(imageRef);
+  self.previewView.image = image;
+  self.previewCaptureInFlight = NO;
 }
 
 - (void)refreshDisplayList:(id)sender {
@@ -1035,7 +988,7 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   (void)sender;
   if (VSMScreenCaptureAccessGranted()) {
     self.statusLabel.stringValue = @"Permission preflight active";
-    if (self.virtualDisplay) {
+    if (self.selectedDisplay) {
       self.previewView.message = @"Waiting for display frames...";
       [self startPreviewTimer];
     }
@@ -1043,7 +996,7 @@ static NSRect VSMTopRect(CGFloat *y, CGFloat x, CGFloat width, CGFloat height, C
   }
 
   self.statusLabel.stringValue = @"Preflight inactive; trying capture";
-  if (self.virtualDisplay) {
+  if (self.selectedDisplay) {
     self.previewView.message = @"Trying preview capture...";
     [self startPreviewTimer];
   }
@@ -1101,16 +1054,17 @@ static int VSMSelfTest(void) {
     config.serialNumber = VSMAutoSerialNumber();
 
     NSString *errorMessage = nil;
-    CGVirtualDisplay *display = VSMCreateVirtualDisplay(config, &errorMessage);
+    VSMDisplayManager *manager = [[VSMDisplayManager alloc] init];
+    VSMManagedDisplay *display = [manager addDisplayWithConfig:config error:&errorMessage];
     if (!display) {
-      fprintf(stderr, "self-test create failed: %s\n", [VSMErrorString(errorMessage) UTF8String]);
+      fprintf(stderr, "self-test create failed: %s\n", [(errorMessage ?: @"Unknown error") UTF8String]);
       return 1;
     }
 
     printf("self-test created display id=%u\n", display.displayID);
     [NSThread sleepForTimeInterval:0.8];
     printf("%s", [VSMDisplayListText() UTF8String]);
-    display = nil;
+    [manager removeAllDisplays];
     [NSThread sleepForTimeInterval:0.6];
     return 0;
   }

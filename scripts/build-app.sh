@@ -24,6 +24,7 @@ clang++ \
   -weak_framework ScreenCaptureKit \
   -framework QuartzCore \
   "$root_dir/native/VirtualSecondMonitorApp.mm" \
+  "$root_dir/native/VSMDisplayManager.mm" \
   -o "$macos/$app_name"
 
 cp "$root_dir/native/VirtualSecondMonitorApp-Info.plist" "$contents/Info.plist"
