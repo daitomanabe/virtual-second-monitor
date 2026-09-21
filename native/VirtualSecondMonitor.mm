@@ -4,67 +4,10 @@
 #import <signal.h>
 #import <stdlib.h>
 
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplayMode : NSObject
-@property(readonly, nonatomic) unsigned int width;
-@property(readonly, nonatomic) unsigned int height;
-@property(readonly, nonatomic) double refreshRate;
-- (id)initWithWidth:(unsigned int)width height:(unsigned int)height refreshRate:(double)refreshRate;
-@end
+#import "VSMDisplayManager.h"
+#import <math.h>
 
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplaySettings : NSObject
-@property(strong, nonatomic) NSArray *modes;
-@property(nonatomic) unsigned int hiDPI;
-@property(nonatomic) unsigned int rotation;
-- (id)init;
-@end
-
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplayDescriptor : NSObject
-@property(nonatomic) unsigned int vendorID;
-@property(nonatomic) unsigned int productID;
-@property(nonatomic) unsigned int serialNum;
-@property(nonatomic) unsigned int serialNumber;
-@property(strong, nonatomic) NSString *name;
-@property(nonatomic) CGSize sizeInMillimeters;
-@property(nonatomic) unsigned int maxPixelsWide;
-@property(nonatomic) unsigned int maxPixelsHigh;
-@property(nonatomic) CGPoint redPrimary;
-@property(nonatomic) CGPoint greenPrimary;
-@property(nonatomic) CGPoint bluePrimary;
-@property(nonatomic) CGPoint whitePoint;
-@property(retain, nonatomic) id queue;
-@property(copy, nonatomic) id terminationHandler;
-- (id)init;
-- (void)setDispatchQueue:(id)queue;
-@end
-
-API_AVAILABLE(macos(10.14))
-@interface CGVirtualDisplay : NSObject
-@property(readonly, nonatomic) unsigned int displayID;
-@property(readonly, nonatomic) unsigned int vendorID;
-@property(readonly, nonatomic) unsigned int productID;
-@property(readonly, nonatomic) unsigned int serialNum;
-@property(readonly, nonatomic) NSString *name;
-@property(readonly, nonatomic) NSArray *modes;
-@property(readonly, nonatomic) unsigned int hiDPI;
-- (id)initWithDescriptor:(CGVirtualDisplayDescriptor *)descriptor;
-- (BOOL)applySettings:(CGVirtualDisplaySettings *)settings;
-@end
-
-typedef struct {
-  unsigned int width;
-  unsigned int height;
-  unsigned int ppi;
-  double refreshRate;
-  BOOL hiDPI;
-  unsigned int serialNumber;
-  unsigned int vendorID;
-  unsigned int productID;
-  NSString *name;
-  BOOL listOnly;
-} VirtualDisplayConfig;
+static unsigned int displayCount = 1;
 
 static volatile sig_atomic_t keepRunning = 1;
 
@@ -82,10 +25,11 @@ static void PrintUsage(const char *binaryName) {
   printf("  --ppi <ppi>        Size metadata. Default: 110\n");
   printf("  --refresh <hz>     Refresh rate. Default: 60\n");
   printf("  --hidpi            Use HiDPI backing scale. Mode is width/2 x height/2.\n");
-  printf("  --name <name>      Display name. Default: Debug Second Display\n");
-  printf("  --serial <number>  Display serial. Default: process-derived value\n");
+  printf("  --name <name>      Display name. Default: Virtual Monitor\n");
+  printf("  --serial <number>  First display serial. Default: automatic\n");
   printf("  --vendor <number>  Vendor ID. Default: 505\n");
   printf("  --product <number> Product ID. Default: 22136\n");
+  printf("  --count <1-8>      Number of virtual monitors. Default: 1\n");
   printf("  --list             Print online displays and exit\n");
   printf("  --help             Print this help\n\n");
   printf("The virtual display exists only while this process is running.\n");
@@ -104,30 +48,17 @@ static unsigned int ParseUInt(const char *value, const char *name) {
 static double ParseDouble(const char *value, const char *name) {
   char *end = NULL;
   double parsed = strtod(value, &end);
-  if (end == value || *end != '\0' || parsed <= 0.0) {
+  if (end == value || *end != '\0' || !isfinite(parsed) || parsed <= 0.0) {
     fprintf(stderr, "Invalid %s: %s\n", name, value);
     exit(2);
   }
   return parsed;
 }
 
-static VirtualDisplayConfig DefaultConfig(void) {
-  VirtualDisplayConfig config;
-  config.width = 1920;
-  config.height = 1080;
-  config.ppi = 110;
-  config.refreshRate = 60.0;
-  config.hiDPI = NO;
-  config.serialNumber = 100000 + (unsigned int)(getpid() % 899999);
-  config.vendorID = 505;
-  config.productID = 22136;
-  config.name = @"Debug Second Display";
-  config.listOnly = NO;
-  return config;
-}
+static BOOL listOnly = NO;
 
-static VirtualDisplayConfig ParseArguments(int argc, const char *argv[]) {
-  VirtualDisplayConfig config = DefaultConfig();
+static VSMVirtualDisplayConfig ParseArguments(int argc, const char *argv[]) {
+  VSMVirtualDisplayConfig config = VSMDefaultConfig();
 
   for (int i = 1; i < argc; i++) {
     NSString *arg = [NSString stringWithUTF8String:argv[i]];
@@ -136,9 +67,11 @@ static VirtualDisplayConfig ParseArguments(int argc, const char *argv[]) {
       PrintUsage(argv[0]);
       exit(0);
     } else if ([arg isEqualToString:@"--list"]) {
-      config.listOnly = YES;
+      listOnly = YES;
     } else if ([arg isEqualToString:@"--hidpi"]) {
       config.hiDPI = YES;
+    } else if ([arg isEqualToString:@"--count"] && i + 1 < argc) {
+      displayCount = ParseUInt(argv[++i], "count");
     } else if ([arg isEqualToString:@"--width"] && i + 1 < argc) {
       config.width = ParseUInt(argv[++i], "width");
     } else if ([arg isEqualToString:@"--height"] && i + 1 < argc) {
@@ -177,6 +110,14 @@ static VirtualDisplayConfig ParseArguments(int argc, const char *argv[]) {
     exit(2);
   }
 
+  if (displayCount < 1 || displayCount > VSMMaximumDisplayCount) {
+    fprintf(stderr, "Count must be between 1 and 8.\n");
+    exit(2);
+  }
+  if (config.serialNumber > UINT_MAX - (displayCount - 1)) {
+    fprintf(stderr, "Serial range exceeds the maximum serial number.\n");
+    exit(2);
+  }
   return config;
 }
 
@@ -211,79 +152,11 @@ static void PrintDisplayList(const char *title) {
   }
 }
 
-static CGVirtualDisplay *CreateVirtualDisplay(VirtualDisplayConfig config) API_AVAILABLE(macos(10.14));
-static CGVirtualDisplay *CreateVirtualDisplay(VirtualDisplayConfig config) {
-  Class displayClass = NSClassFromString(@"CGVirtualDisplay");
-  Class descriptorClass = NSClassFromString(@"CGVirtualDisplayDescriptor");
-  Class settingsClass = NSClassFromString(@"CGVirtualDisplaySettings");
-  Class modeClass = NSClassFromString(@"CGVirtualDisplayMode");
-
-  if (!displayClass || !descriptorClass || !settingsClass || !modeClass) {
-    fprintf(stderr, "CGVirtualDisplay API is not available on this macOS build.\n");
-    return nil;
-  }
-
-  CGVirtualDisplayDescriptor *descriptor = [[CGVirtualDisplayDescriptor alloc] init];
-  descriptor.name = config.name;
-  descriptor.maxPixelsWide = config.width;
-  descriptor.maxPixelsHigh = config.height;
-  descriptor.sizeInMillimeters = CGSizeMake(25.4 * config.width / config.ppi,
-                                             25.4 * config.height / config.ppi);
-  descriptor.whitePoint = CGPointMake(0.3125, 0.3291);
-  descriptor.bluePrimary = CGPointMake(0.1494, 0.0557);
-  descriptor.greenPrimary = CGPointMake(0.2559, 0.6983);
-  descriptor.redPrimary = CGPointMake(0.6797, 0.3203);
-  descriptor.vendorID = config.vendorID;
-  descriptor.productID = config.productID;
-
-  if ([descriptor respondsToSelector:@selector(setSerialNum:)]) {
-    descriptor.serialNum = config.serialNumber;
-  }
-  if ([descriptor respondsToSelector:@selector(setSerialNumber:)]) {
-    descriptor.serialNumber = config.serialNumber;
-  }
-  if ([descriptor respondsToSelector:@selector(setQueue:)]) {
-    descriptor.queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0);
-  }
-  if ([descriptor respondsToSelector:@selector(setDispatchQueue:)]) {
-    [descriptor setDispatchQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0)];
-  }
-  if ([descriptor respondsToSelector:@selector(setTerminationHandler:)]) {
-    descriptor.terminationHandler = ^{};
-  }
-
-  CGVirtualDisplay *display = [[CGVirtualDisplay alloc] initWithDescriptor:descriptor];
-  if (!display) {
-    fprintf(stderr, "CGVirtualDisplay initWithDescriptor failed.\n");
-    return nil;
-  }
-
-  CGVirtualDisplaySettings *settings = [[CGVirtualDisplaySettings alloc] init];
-  settings.hiDPI = config.hiDPI ? 1 : 0;
-  if ([settings respondsToSelector:@selector(setRotation:)]) {
-    settings.rotation = 0;
-  }
-
-  unsigned int modeWidth = config.hiDPI ? config.width / 2 : config.width;
-  unsigned int modeHeight = config.hiDPI ? config.height / 2 : config.height;
-  CGVirtualDisplayMode *mode = [[CGVirtualDisplayMode alloc] initWithWidth:modeWidth
-                                                                    height:modeHeight
-                                                               refreshRate:config.refreshRate];
-  settings.modes = @[ mode ];
-
-  if (![display applySettings:settings]) {
-    fprintf(stderr, "CGVirtualDisplay applySettings failed.\n");
-    return nil;
-  }
-
-  return display;
-}
-
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    VirtualDisplayConfig config = ParseArguments(argc, argv);
+    VSMVirtualDisplayConfig config = ParseArguments(argc, argv);
 
-    if (config.listOnly) {
+    if (listOnly) {
       PrintDisplayList("Displays");
       return 0;
     }
@@ -293,21 +166,25 @@ int main(int argc, const char *argv[]) {
 
     PrintDisplayList("Before");
 
-    CGVirtualDisplay *display = CreateVirtualDisplay(config);
-    if (!display) {
-      return 1;
+    VSMDisplayManager *manager = [[VSMDisplayManager alloc] init];
+    for (unsigned int i = 0; i < displayCount && keepRunning; i++) {
+      @autoreleasepool {
+        VSMVirtualDisplayConfig next = config;
+        if (displayCount > 1) next.name = [NSString stringWithFormat:@"%@ %u", config.name, i + 1];
+        if (config.serialNumber > 0) next.serialNumber += i;
+        NSString *error = nil;
+        VSMManagedDisplay *display = [manager addDisplayWithConfig:next error:&error];
+        if (!display) {
+          fprintf(stderr, "Could not create monitor %u: %s\n", i + 1, error.UTF8String);
+          [manager removeAllDisplays];
+          return 1;
+        }
+        printf("Created virtual monitor %u: id=%u name=%s physical=%ux%u serial=%u hidpi=%s\n",
+               i + 1, display.displayID, next.name.UTF8String, next.width, next.height,
+               display.config.serialNumber, next.hiDPI ? "yes" : "no");
+      }
     }
-
-    printf("\nCreated virtual display\n");
-    printf("  id=%u\n", display.displayID);
-    printf("  name=%s\n", [config.name UTF8String]);
-    printf("  physical=%ux%u\n", config.width, config.height);
-    printf("  mode=%ux%u @ %.2fHz\n",
-           config.hiDPI ? config.width / 2 : config.width,
-           config.hiDPI ? config.height / 2 : config.height,
-           config.refreshRate);
-    printf("  hidpi=%s\n", config.hiDPI ? "yes" : "no");
-    printf("\nPress Ctrl-C to remove the virtual display.\n\n");
+    printf("\nPress Ctrl-C to remove all monitors created by this process.\n\n");
     fflush(stdout);
 
     [NSThread sleepForTimeInterval:0.8];
@@ -320,9 +197,8 @@ int main(int argc, const char *argv[]) {
       }
     }
 
-    CGDirectDisplayID removedDisplayID = display.displayID;
-    printf("\nExiting; macOS will remove virtual display id=%u\n", removedDisplayID);
-    display = nil;
+    printf("\nRemoving %lu virtual monitors\n", (unsigned long)manager.displays.count);
+    [manager removeAllDisplays];
   }
 
   return 0;

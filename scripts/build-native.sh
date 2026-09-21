@@ -14,6 +14,7 @@ clang++ \
   -framework Foundation \
   -framework CoreGraphics \
   "$root_dir/native/VirtualSecondMonitor.mm" \
+  "$root_dir/native/VSMDisplayManager.mm" \
   -o "$root_dir/build/virtual-second-monitor"
 
 echo "$root_dir/build/virtual-second-monitor"

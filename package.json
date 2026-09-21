@@ -15,6 +15,7 @@
     "start:8k": "scripts/run-8k.sh",
     "start:hidpi": "scripts/run-hidpi-4k.sh",
     "list": "build/virtual-second-monitor --list",
-    "start:web": "node server.mjs"
+    "start:web": "node server.mjs",
+    "test:native": "scripts/test-native.sh"
   }
 }
